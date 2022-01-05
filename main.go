@@ -47,16 +47,26 @@ func main() {
 
 	for req := range tryGetRequest {
 		fmt.Printf("Receive request id:%v", req.(string))
-		// query := fmt.Sprintf(`UPDATE req_jobs SET status='processing'
-		// 	WHERE id = %s AND status='new' RETURNING *;`, req.(string))
-		// var (
-		// 	req_id int
-		// )
-		// errRow := iotDB.QueryRow(context.Background(), query).Scan(&req_id)
-		// if errRow != nil {
-		// 	fmt.Printf("Error when update status! Err:%v Query: %s", errRow, query)
-		// } else {
-		// 	fmt.Printf("Update status! Request_id: %v", req_id)
-		// }
+		query := fmt.Sprintf(`UPDATE req_jobs SET status='processing'
+			WHERE id = %s AND status='new' RETURNING *;`, req.(string))
+		var (
+			request_id         int
+			request_time       time.Time
+			request_data       string
+			status             string
+			status_update_time time.Time
+		)
+		errRow := iotDB.QueryRow(context.Background(), query).Scan(
+			&request_id,
+			&request_time,
+			&request_data,
+			&status,
+			&status_update_time,
+		)
+		if errRow != nil {
+			fmt.Printf("Error when update status! Err:%v Query: %s", errRow, query)
+		} else {
+			fmt.Printf("Update status! Request_id: %v", request_id)
+		}
 	}
 }
