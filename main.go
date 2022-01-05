@@ -4,49 +4,50 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/jackc/pgx/v4"
-	"github.com/lib/pq"
 )
 
 func main() {
+	ctxParent, cancelMain := context.WithCancel(context.Background())
+	// Interrupt Ctrl+C
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for sig := range c {
+			// sig is a ^C, handle it
+			_ = sig
+			fmt.Printf("Receive Ctrl+C")
+			cancelMain()
+			break
+		}
+	}()
 	// urlExample := ""
 	connInfo := "postgres://user:123qwe@172.17.0.2:5432/iot_jobs"
-	iotDB, err := pgx.Connect(context.Background(), connInfo)
+	iotDB, err := pgx.Connect(ctxParent, connInfo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer iotDB.Close(context.Background())
+	defer iotDB.Close(ctxParent)
 
-	reportErrInListener := func(event pq.ListenerEventType, err error) {
-		if err != nil {
-			fmt.Printf("In event:%v error:%v", event, err.Error())
-		}
-	}
+	ctxSubscriber, cancel := context.WithCancel(ctxParent)
+	defer cancel()
+
 	connPq := "host=172.17.0.2 port=5432 user=user password=123qwe dbname=iot_jobs sslmode=disable"
-	listener := pq.NewListener(connPq, 10*time.Second, time.Minute,
-		reportErrInListener)
-	err = listener.Listen("req_jobs_status_channel")
+	subscriber := NewSubscriber(ctxSubscriber, connPq)
+	chGetRequest, err := subscriber.Listen("req_jobs_status_channel")
 	if err != nil {
-		panic(err)
+		cancelMain()
+		os.Exit(1)
 	}
 
-	fmt.Println("Start monitoring requests from PostgreSQL...")
-	tryGetRequest := make(chan interface{})
-	go func() {
-		for req := range listener.Notify {
-			fmt.Println("Received data from channel [", req.Channel, "] :", req.Extra)
-			select {
-			case tryGetRequest <- req.Extra:
-			}
-		}
-		close(tryGetRequest)
-	}()
+	fmt.Println(time.Now().String() + "Start monitoring requests from PostgreSQL...")
 
-	for req := range tryGetRequest {
-		fmt.Printf("Receive request id:%v", req.(string))
+	for req := range chGetRequest {
+		fmt.Printf("[%s] Receive request id:%v", time.Now().String(), req.(string))
 		query := fmt.Sprintf(`UPDATE req_jobs SET status='processing'
 			WHERE id = %s AND status='new' RETURNING *;`, req.(string))
 		var (
@@ -56,7 +57,7 @@ func main() {
 			status             string
 			status_update_time time.Time
 		)
-		errRow := iotDB.QueryRow(context.Background(), query).Scan(
+		errRow := iotDB.QueryRow(ctxParent, query).Scan(
 			&request_id,
 			&request_time,
 			&request_data,
@@ -64,9 +65,11 @@ func main() {
 			&status_update_time,
 		)
 		if errRow != nil {
-			fmt.Printf("Error when update status! Err:%v Query: %s", errRow, query)
+			fmt.Printf("[%s] Error when update status! Err:%v Query: %s \n",
+				time.Now().String(), errRow, query)
 		} else {
-			fmt.Printf("Update status! Request_id: %v", request_id)
+			fmt.Printf("[%s] Update status! Request_id: %v \n",
+				time.Now().String(), request_id)
 		}
 	}
 }
