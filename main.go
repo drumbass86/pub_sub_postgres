@@ -19,7 +19,7 @@ func main() {
 		for sig := range c {
 			// sig is a ^C, handle it
 			_ = sig
-			fmt.Printf("Receive Ctrl+C")
+			fmt.Println("[Main] Receive Ctrl+C! Canceled main context!")
 			cancelMain()
 			break
 		}
@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println(time.Now().String() + "Start monitoring requests from PostgreSQL...")
+	fmt.Println(time.Now().String() + " Start monitoring requests from PostgreSQL...")
 
 	for req := range chGetRequest {
 		fmt.Printf("[%s] Receive request id:%v", time.Now().String(), req.(string))
@@ -72,4 +72,5 @@ func main() {
 				time.Now().String(), request_id)
 		}
 	}
+	os.Exit(0)
 }

@@ -48,16 +48,17 @@ func (s *Subscriber) Listen(psqlchname string) (chan DataFromPSQL, error) {
 	s.ChanData = make(chan DataFromPSQL)
 
 	go func() {
-		for req := range s.ListenerPSQL.Notify {
-			fmt.Println(time.Now().String(), " Received data from channel [", req.Channel, "] :", req.Extra)
+		defer close(s.ChanData)
+		for {
 			select {
-			case s.ChanData <- req.Extra:
+			case req := <-s.ListenerPSQL.Notify:
+				fmt.Println(time.Now().String(), " [Subscriber] Received data from channel [", req.Channel, "] :", req.Extra)
+				s.ChanData <- req.Extra
 			case <-s.ctx.Done():
-				fmt.Println("Receive context.Done")
+				fmt.Println(time.Now().String(), " [Subscriber] Receive context.Done")
 				return
 			}
 		}
-		close(s.ChanData)
 	}()
 
 	return s.ChanData, nil
